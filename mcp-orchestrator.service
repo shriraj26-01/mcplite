@@ -1,0 +1,15 @@
+[Unit]
+Description=MCP Shared Orchestrator
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/tmp/mcp-orchestrator.pid
+ExecStart=/usr/bin/python3 %h/Desktop/mcp-shared-proxy/orchestrator.py start
+ExecStop=/usr/bin/python3 %h/Desktop/mcp-shared-proxy/orchestrator.py stop
+Restart=on-failure
+RestartSec=3
+Environment=MCP_ORCH_SOCKET=/tmp/mcp-orchestrator.sock
+
+[Install]
+WantedBy=default.target

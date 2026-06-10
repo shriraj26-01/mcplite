@@ -1,0 +1,38 @@
+{
+  "servers": {
+    "mongodb": {
+      "command": "npx",
+      "args": ["--prefer-offline", "-y", "mongodb-mcp-server", "--connectionString", "mongodb://user:pass@host:27017/?authMechanism=SCRAM-SHA-1"]
+    },
+    "gitlab": {
+      "command": "npx",
+      "args": ["--prefer-offline", "-y", "@zereight/mcp-gitlab"],
+      "env": {
+        "GITLAB_PERSONAL_ACCESS_TOKEN": "glpat-xxxxxxxxxxxx",
+        "GITLAB_API_URL": "https://gitlab.example.com/api/v4"
+      }
+    },
+    "jira": {
+      "command": "python3",
+      "args": ["/path/to/mcp/jira/venv/bin/python", "/path/to/mcp/jira/server.py"],
+      "env": {
+        "JIRA_URL": "https://your-org.atlassian.net",
+        "JIRA_USERNAME": "you@company.com",
+        "JIRA_API_TOKEN": "your-token"
+      }
+    },
+    "jenkins": {
+      "command": "python3",
+      "args": ["/path/to/mcp/jenkins/server.py"],
+      "env": {
+        "JENKINS_URL": "https://jenkins.example.com",
+        "JENKINS_USER": "user",
+        "JENKINS_TOKEN": "your-token"
+      }
+    },
+    "http-client": {
+      "command": "python3",
+      "args": ["/path/to/mcp/http-client/server.py"]
+    }
+  }
+}

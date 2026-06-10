@@ -1,0 +1,8 @@
+config.json
+kiro-mcp.json
+__pycache__/
+*.pyc
+.kiro/
+OPEN_SOURCE_STRATEGY.md
+mcp-bridge
+backup-v1/
