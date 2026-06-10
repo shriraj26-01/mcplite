@@ -53,15 +53,14 @@ bash install.sh
 ## How It Works
 
 ```
-+-------------+       +------------------+       +----------------+
-|  Kiro CLI   | stdio  |  mcp-bridge (C)  |  sock  |                |---- mongodb  (1)
-|  Terminal 1  |------->|  17KB, 1.5MB RAM |------->|                |---- gitlab   (1)
-+-------------+       +------------------+       |  Orchestrator  |---- jira     (1)
-                                                  |    daemon      |---- jenkins  (1)
-+-------------+       +------------------+       |   (18 MB RAM)  |---- postgres (1)
-|  Kiro CLI   | stdio  |  mcp-bridge (C)  |  sock  |                |
-|  Terminal 2  |------->|  17KB, 1.5MB RAM |------->|                |
-+-------------+       +------------------+       +----------------+
+                    stdin              sock
+Terminal 1  ------>  mcp-bridge (C)  ------>  +----------------+
+                    (17KB, 1.5MB)             |                |----> mongodb  (1)
+                                             |                |----> gitlab   (1)
+                    stdin              sock   |  Orchestrator  |----> jira     (1)
+Terminal 2  ------>  mcp-bridge (C)  ------>  |  (18 MB RAM)   |----> jenkins  (1)
+                    (17KB, 1.5MB)             |                |----> postgres (1)
+                                             +----------------+
 ```
 
 - **Bridge**: 17KB compiled C binary. Relays stdin/stdout ↔ Unix socket. 1.5 MB RAM.
