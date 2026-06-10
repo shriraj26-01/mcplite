@@ -53,14 +53,14 @@ bash install.sh
 ## How It Works
 
 ```
-                    stdin              sock
-Terminal 1  ------>  mcp-bridge (C)  ------>  +----------------+
-                    (17KB, 1.5MB)             |                |----> mongodb  (1)
-                                             |                |----> gitlab   (1)
-                    stdin              sock   |  Orchestrator  |----> jira     (1)
-Terminal 2  ------>  mcp-bridge (C)  ------>  |  (18 MB RAM)   |----> jenkins  (1)
-                    (17KB, 1.5MB)             |                |----> postgres (1)
-                                             +----------------+
+Terminal 1 ──> mcp-bridge (C) ──> ┌──────────────┐
+              [17KB, 1.5MB]       │              │──> mongodb  (1)
+                                  │              │──> gitlab   (1)
+Terminal 2 ──> mcp-bridge (C) ──> │ Orchestrator │──> jira     (1)
+              [17KB, 1.5MB]       │  (18MB RAM)  │──> jenkins  (1)
+                                  │              │──> postgres (1)
+Terminal N ──> mcp-bridge (C) ──> └──────────────┘
+              [17KB, 1.5MB]
 ```
 
 - **Bridge**: 17KB compiled C binary. Relays stdin/stdout ↔ Unix socket. 1.5 MB RAM.
