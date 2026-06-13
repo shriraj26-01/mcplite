@@ -76,7 +76,7 @@ Terminal N ──> mcp-bridge (C) ──> └───────────�
 - **Init caching** — subsequent terminals get instant responses
 - **Circuit breaker** — per-server failure isolation
 - **Auto-restart** — crashed servers restart with exponential backoff
-- **Memory watchdog** — monitors RSS, prevents unbounded growth
+- **Memory watchdog** — monitors RSS, auto-restarts servers exceeding 500 MB (prevents multi-GB leaks)
 - **Bounded queues** — 10K pending requests max with 5-min TTL
 - **Graceful shutdown** — SIGTERM drains requests, then cleans up
 - **flock() PID** — kernel handles crash cleanup (no stale locks)
