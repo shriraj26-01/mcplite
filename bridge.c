@@ -15,14 +15,23 @@
 #include <sys/stat.h>
 #include <time.h>
 
-#define SOCKET_DIR "/tmp/mcp-orchestrator"
 #define BUF_SIZE 65536
 #define MAX_RETRIES 10
 #define RETRY_BASE_MS 500
 
+static char socket_dir[256];
+
+static void init_socket_dir(void) {
+    const char *env = getenv("MCP_ORCH_SOCKET_DIR");
+    if (env) { strncpy(socket_dir, env, sizeof(socket_dir)-1); return; }
+    const char *xdg = getenv("XDG_RUNTIME_DIR");
+    if (xdg) { snprintf(socket_dir, sizeof(socket_dir), "%s/mcp-orchestrator", xdg); return; }
+    snprintf(socket_dir, sizeof(socket_dir), "/run/user/%d/mcp-orchestrator", getuid());
+}
+
 static int connect_socket(const char *server) {
     char path[256];
-    snprintf(path, sizeof(path), "%s/%s.sock", SOCKET_DIR, server);
+    snprintf(path, sizeof(path), "%s/%s.sock", socket_dir, server);
 
     int fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if (fd < 0) return -1;
@@ -96,6 +105,7 @@ int main(int argc, char *argv[]) {
         fprintf(stderr, "Usage: mcp-bridge <server_name>\n");
         return 1;
     }
+    init_socket_dir();
     const char *server = argv[1];
 
     while (1) {

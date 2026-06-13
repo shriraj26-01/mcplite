@@ -44,8 +44,9 @@ from protocol import (
 
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "config.json"
-SOCKET_DIR = Path(os.environ.get("MCP_ORCH_SOCKET_DIR", "/tmp/mcp-orchestrator"))
-PID_FILE = Path("/tmp/mcp-orchestrator.pid")
+_runtime_dir = os.environ.get("XDG_RUNTIME_DIR", f"/run/user/{os.getuid()}")
+SOCKET_DIR = Path(os.environ.get("MCP_ORCH_SOCKET_DIR", f"{_runtime_dir}/mcp-orchestrator"))
+PID_FILE = SOCKET_DIR / "orchestrator.pid"
 LOG_FILE = Path("/tmp/mcp-orchestrator.log")
 
 # Tuning
@@ -59,6 +60,37 @@ MEMORY_WARN_MB = 40
 MEMORY_CRITICAL_MB = 80
 GC_INTERVAL = 300  # 5 minutes
 MAX_SERVER_RSS_MB = 500  # Auto-restart server if RSS exceeds this
+
+# --- Helpers ---
+
+def _get_tree_rss_kb(pid: int) -> int:
+    """Get total RSS of a process and all descendants via /proc."""
+    import os
+    # Build parent→children map from /proc
+    children_map: Dict[int, List[int]] = {}
+    for entry in os.listdir("/proc"):
+        if not entry.isdigit():
+            continue
+        try:
+            with open(f"/proc/{entry}/stat") as f:
+                parts = f.read().split()
+                ppid = int(parts[3])
+                children_map.setdefault(ppid, []).append(int(entry))
+        except (FileNotFoundError, ValueError, IndexError):
+            pass
+    # Walk tree from pid
+    total = 0
+    stack = [pid]
+    while stack:
+        p = stack.pop()
+        try:
+            with open(f"/proc/{p}/statm") as f:
+                total += int(f.read().split()[1]) * 4  # pages → KB
+        except (FileNotFoundError, ValueError):
+            pass
+        stack.extend(children_map.get(p, []))
+    return total
+
 
 # --- Logging ---
 
@@ -214,13 +246,17 @@ class Orchestrator:
         for client_id, original_id in orphans:
             await self._send_error_to_client(client_id, original_id, -32001, f"{server.name} crashed")
 
-        # Reap process
+        # Kill entire process tree (npm → sh → node)
         if server.process:
             try:
+                os.killpg(os.getpgid(server.process.pid), signal.SIGTERM)
                 await asyncio.wait_for(server.process.wait(), timeout=5)
-            except asyncio.TimeoutError:
-                os.killpg(server.process.pid, signal.SIGKILL)
-                await server.process.wait()
+            except (asyncio.TimeoutError, ProcessLookupError, OSError):
+                try:
+                    os.killpg(os.getpgid(server.process.pid), signal.SIGKILL)
+                    await server.process.wait()
+                except (ProcessLookupError, OSError):
+                    pass
 
         # Attempt restart with backoff
         await self._restart_server(server)
@@ -452,25 +488,14 @@ class Orchestrator:
                         log.warning(f"[{server.name}] Died with code {server.process.returncode}")
                         await self._handle_server_death(server)
                         continue
-                    # RSS watchdog: restart leaky servers (check process group)
+                    # RSS watchdog: check full process tree via /proc (no subprocess)
                     try:
-                        import subprocess
-                        result = subprocess.run(
-                            ["ps", "-o", "rss=", "--ppid", str(server.process.pid)],
-                            capture_output=True, text=True, timeout=5
-                        )
-                        tree_rss_kb = 0
-                        for line in result.stdout.strip().split('\n'):
-                            if line.strip():
-                                tree_rss_kb += int(line.strip())
-                        # Add the parent itself
-                        with open(f"/proc/{server.process.pid}/statm") as f:
-                            tree_rss_kb += int(f.read().split()[1]) * 4
+                        tree_rss_kb = _get_tree_rss_kb(server.process.pid)
                         rss_mb = tree_rss_kb / 1024
                         if rss_mb > MAX_SERVER_RSS_MB:
-                            log.warning(f"[{server.name}] RSS {rss_mb:.0f}MB > {MAX_SERVER_RSS_MB}MB, restarting")
+                            log.warning(f"[{server.name}] Tree RSS {rss_mb:.0f}MB > {MAX_SERVER_RSS_MB}MB, restarting")
                             await self._handle_server_death(server)
-                    except (FileNotFoundError, ProcessLookupError, subprocess.TimeoutExpired):
+                    except (FileNotFoundError, ProcessLookupError):
                         pass
 
     # --- Main Run ---
@@ -570,6 +595,7 @@ class ClientConnection:
 
 def acquire_lock() -> int:
     """Acquire exclusive PID file lock. Returns fd (keep open!)."""
+    SOCKET_DIR.mkdir(parents=True, exist_ok=True)
     fd = os.open(str(PID_FILE), os.O_RDWR | os.O_CREAT, 0o600)
     try:
         fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
