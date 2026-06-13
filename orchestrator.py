@@ -58,6 +58,7 @@ IDLE_CLIENT_TIMEOUT = 3600  # 1 hour
 MEMORY_WARN_MB = 40
 MEMORY_CRITICAL_MB = 80
 GC_INTERVAL = 300  # 5 minutes
+MAX_SERVER_RSS_MB = 500  # Auto-restart server if RSS exceeds this
 
 # --- Logging ---
 
@@ -313,9 +314,8 @@ class Orchestrator:
         try:
             while self._running:
                 try:
-                    chunk = await asyncio.wait_for(reader.read(16384), timeout=IDLE_CLIENT_TIMEOUT)
-                except asyncio.TimeoutError:
-                    log.info(f"Client {client_id} idle timeout")
+                    chunk = await reader.read(16384)
+                except asyncio.CancelledError:
                     break
                 if not chunk:
                     break
@@ -413,8 +413,8 @@ class Orchestrator:
         while self._running:
             await asyncio.sleep(HEARTBEAT_INTERVAL)
             for client in list(self.clients.values()):
-                # Check if idle too long
-                if time.time() - client.last_active > IDLE_CLIENT_TIMEOUT:
+                # Check if writer is dead
+                if client.writer.is_closing():
                     await self._disconnect_client(client.id)
 
     async def _request_timeout_loop(self):
@@ -443,7 +443,7 @@ class Orchestrator:
                 pass
 
     async def _server_health_loop(self):
-        """Monitor server process liveness."""
+        """Monitor server process liveness and memory usage."""
         while self._running:
             await asyncio.sleep(10)
             for server in self.servers.values():
@@ -451,6 +451,27 @@ class Orchestrator:
                     if server.process.returncode is not None:
                         log.warning(f"[{server.name}] Died with code {server.process.returncode}")
                         await self._handle_server_death(server)
+                        continue
+                    # RSS watchdog: restart leaky servers (check process group)
+                    try:
+                        import subprocess
+                        result = subprocess.run(
+                            ["ps", "-o", "rss=", "--ppid", str(server.process.pid)],
+                            capture_output=True, text=True, timeout=5
+                        )
+                        tree_rss_kb = 0
+                        for line in result.stdout.strip().split('\n'):
+                            if line.strip():
+                                tree_rss_kb += int(line.strip())
+                        # Add the parent itself
+                        with open(f"/proc/{server.process.pid}/statm") as f:
+                            tree_rss_kb += int(f.read().split()[1]) * 4
+                        rss_mb = tree_rss_kb / 1024
+                        if rss_mb > MAX_SERVER_RSS_MB:
+                            log.warning(f"[{server.name}] RSS {rss_mb:.0f}MB > {MAX_SERVER_RSS_MB}MB, restarting")
+                            await self._handle_server_death(server)
+                    except (FileNotFoundError, ProcessLookupError, subprocess.TimeoutExpired):
+                        pass
 
     # --- Main Run ---
 
