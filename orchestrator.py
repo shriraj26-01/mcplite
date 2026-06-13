@@ -59,7 +59,7 @@ IDLE_CLIENT_TIMEOUT = 3600  # 1 hour
 MEMORY_WARN_MB = 40
 MEMORY_CRITICAL_MB = 80
 GC_INTERVAL = 300  # 5 minutes
-MAX_SERVER_RSS_MB = 500  # Auto-restart server if RSS exceeds this
+MAX_SERVER_RSS_MB = 1024  # Auto-restart server if RSS exceeds this
 
 # --- Helpers ---
 
